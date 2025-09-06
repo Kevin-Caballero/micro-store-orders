@@ -1,98 +1,352 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Orders Service - Micro Store
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+📦 **Orders Service** es el microservicio responsable del procesamiento completo de órdenes en el sistema Micro Store. Gestiona el ciclo de vida completo desde la creación hasta la entrega.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## 🎯 Propósito
 
-## Description
+El Orders Service es responsable de:
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+- **Gestión de órdenes**: CRUD completo de órdenes
+- **Procesamiento de pagos**: Integración con sistemas de pago
+- **Gestión de estados**: Control del flujo de estados de orden
+- **Validación de productos**: Coordinación con Products Service
+- **Tracking y notificaciones**: Seguimiento de órdenes
+- **Reportes**: Analíticas de ventas y órdenes
 
-## Project setup
+## 🏗️ Arquitectura
 
-```bash
-$ npm install
+```
+Gateway → NATS → Orders Service → PostgreSQL Database
+                       ↓              ↓
+               Products Service   Order Items
 ```
 
-## Compile and run the project
+### Componentes Principales
 
-```bash
-# development
-$ npm run start
+- **Orders Controller**: Maneja mensajes NATS
+- **Orders Service**: Lógica de negocio de órdenes
+- **Prisma Service**: Acceso a datos PostgreSQL
+- **Health Module**: Monitoreo de salud del servicio
 
-# watch mode
-$ npm run start:dev
+## 📊 Modelo de Datos
 
-# production mode
-$ npm run start:prod
+### Order Entity
+
+```typescript
+model Order {
+  id          String      @id @default(uuid())
+  total       Float
+  status      OrderStatus @default(PENDING)
+  paid        Boolean     @default(false)
+  paidAt      DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  // Relaciones
+  orderItems  OrderItem[]
+}
 ```
 
-## Run tests
+### OrderItem Entity
 
-```bash
-# unit tests
-$ npm run test
+```typescript
+model OrderItem {
+  id        String @id @default(uuid())
+  productId String
+  quantity  Int
+  price     Float
 
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+  // Relaciones
+  order     Order  @relation(fields: [orderId], references: [id])
+  orderId   String
+}
 ```
 
-## Deployment
+### Order Status Enum
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+```typescript
+enum OrderStatus {
+  PENDING
+  PAID
+  DELIVERED
+  CANCELLED
+}
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+## 📡 Message Patterns (NATS)
 
-## Resources
+### Patrones de Entrada
 
-Check out a few resources that may come in handy when working with NestJS:
+| Patrón              | Descripción               | Payload                               |
+| ------------------- | ------------------------- | ------------------------------------- |
+| `findAllOrders`     | Obtener todas las órdenes | `{}`                                  |
+| `findOneOrder`      | Obtener orden por ID      | `{ id: string }`                      |
+| `createOrder`       | Crear nueva orden         | `CreateOrderDto`                      |
+| `updateOrderStatus` | Actualizar estado         | `{ id: string, status: OrderStatus }` |
+| `changeOrderStatus` | Cambiar estado de orden   | `ChangeOrderStatusDto`                |
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+### Patrones de Salida
 
-## Support
+| Patrón                 | Descripción     | Cuando se emite         |
+| ---------------------- | --------------- | ----------------------- |
+| `order.created`        | Orden creada    | Después de crear orden  |
+| `order.status.changed` | Estado cambiado | Cuando cambia el estado |
+| `order.paid`           | Orden pagada    | Cuando se confirma pago |
+| `order.cancelled`      | Orden cancelada | Al cancelar orden       |
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+### Integración con Products Service
 
-## Stay in touch
+| Patrón Enviado         | Descripción                        | Respuesta Esperada                       |
+| ---------------------- | ---------------------------------- | ---------------------------------------- |
+| `validateProductStock` | Validar stock antes de crear orden | `stock.validated` / `stock.insufficient` |
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+## 🔧 Configuración
 
-## License
+### Variables de Entorno
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+```env
+PORT=3002
+NATS_SERVERS=nats://nats-server:4222
+DATABASE_URL=postgresql://postgres:password@orders-db:5432/ordersdb
+BASE_URL=http://orders:3002
+```
+
+### Dependencias Principales
+
+- **@nestjs/microservices**: Cliente NATS
+- **@prisma/client**: ORM para PostgreSQL
+- **class-validator**: Validación de DTOs
+- **shared**: DTOs compartidas del proyecto
+
+## 🗄️ Base de Datos
+
+### PostgreSQL Configuration
+
+```prisma
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+```
+
+### Health Checks
+
+```yaml
+# Docker Compose Health Check
+healthcheck:
+  test: ['CMD-SHELL', 'pg_isready -U postgres -d ordersdb']
+  interval: 10s
+  timeout: 5s
+  retries: 5
+```
+
+### Migraciones
+
+```bash
+# Generar migración
+npx prisma migrate dev --name add_orders
+
+# Aplicar migraciones en producción
+npx prisma migrate deploy
+
+# Resetear base de datos (solo desarrollo)
+npx prisma migrate reset
+
+# Ver base de datos
+npx prisma studio
+```
+
+## 🚀 Desarrollo
+
+### Instalación
+
+```bash
+npm install
+```
+
+### Comandos Disponibles
+
+```bash
+# Desarrollo con hot reload
+npm run start:dev
+
+# Producción
+npm run start:prod
+
+# Build
+npm run build
+
+# Tests
+npm run test
+npm run test:e2e
+
+# Base de datos
+npx prisma studio
+npx prisma migrate dev
+```
+
+### Desarrollo Local
+
+Para desarrollo local necesitas:
+
+1. **PostgreSQL**: Base de datos (puerto 5432)
+2. **NATS Server**: Servidor de mensajes (puerto 4222)
+3. **Products Service**: Para validación de productos
+
+```bash
+# Opción 1: Solo el servicio (requiere deps externas)
+npm run start:dev
+
+# Opción 2: Usar Docker Compose (desde la raíz del proyecto)
+cd ../..
+npm start
+```
+
+## 📝 DTOs y Validación
+
+### CreateOrderDto
+
+```typescript
+export class CreateOrderDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateOrderItemDto)
+  items: CreateOrderItemDto[];
+}
+```
+
+### CreateOrderItemDto
+
+```typescript
+export class CreateOrderItemDto {
+  @IsString()
+  @IsNotEmpty()
+  productId: string;
+
+  @IsInt()
+  @Min(1)
+  quantity: number;
+
+  @IsNumber()
+  @IsPositive()
+  price: number;
+}
+```
+
+### ChangeOrderStatusDto
+
+```typescript
+export class ChangeOrderStatusDto {
+  @IsString()
+  @IsNotEmpty()
+  id: string;
+
+  @IsEnum(OrderStatus)
+  status: OrderStatus;
+}
+```
+
+## 🔄 Flujo de Procesos
+
+### Creación de Orden
+
+1. **Recibir petición** de crear orden
+2. **Validar productos** con Products Service
+3. **Calcular total** de la orden
+4. **Crear orden** en base de datos
+5. **Crear items** de la orden
+6. **Emitir evento** `order.created`
+7. **Responder** con orden creada
+
+### Cambio de Estado
+
+1. **Recibir petición** de cambio de estado
+2. **Validar transición** de estado
+3. **Actualizar orden** en base de datos
+4. **Emitir evento** de cambio de estado
+5. **Responder** con orden actualizada
+
+## 🛡️ Validaciones de Negocio
+
+### Estados Válidos
+
+```typescript
+const validTransitions = {
+  PENDING: ['PAID', 'CANCELLED'],
+  PAID: ['DELIVERED', 'CANCELLED'],
+  DELIVERED: [], // Estado final
+  CANCELLED: [], // Estado final
+};
+```
+
+### Reglas de Negocio
+
+- Una orden no puede ser modificada después de ser entregada
+- Solo se puede cancelar si no ha sido entregada
+- El total se calcula automáticamente
+- Los productos deben existir y tener stock
+
+## 📊 Monitoreo
+
+### Health Check
+
+```typescript
+@Get('health')
+async health() {
+  return {
+    status: 'ok',
+    database: await this.prisma.$queryRaw`SELECT 1`,
+    orders_count: await this.prisma.order.count(),
+    timestamp: new Date().toISOString()
+  };
+}
+```
+
+### Métricas
+
+- Número de órdenes por estado
+- Tiempo promedio de procesamiento
+- Valor total de órdenes
+- Tasa de órdenes canceladas
+
+## 🔍 Funcionalidades Avanzadas
+
+### Filtros y Búsquedas
+
+```typescript
+// Buscar órdenes por estado
+findByStatus(status: OrderStatus)
+
+// Buscar órdenes por fecha
+findByDateRange(startDate: Date, endDate: Date)
+
+// Buscar órdenes por cliente
+findByCustomer(customerId: string)
+```
+
+### Reportes
+
+- Ventas por período
+- Productos más vendidos
+- Análisis de órdenes canceladas
+- Tiempo promedio de entrega
+
+## 🔗 Enlaces Relacionados
+
+- [Gateway Service](../gateway/README.md)
+- [Products Service](../products/README.md)
+- [Shared DTOs](../../shared/README.md)
+- [Prisma Documentation](https://www.prisma.io/docs/)
+
+---
+
+**Puerto por defecto**: 3002  
+**Base de datos**: PostgreSQL  
+**ORM**: Prisma  
+**Framework**: NestJS + TypeScript  
+**Autor**: Kevin Caballero
